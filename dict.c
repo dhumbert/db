@@ -1,11 +1,12 @@
-#include "stdlib.h"
-#include "string.h"
+#include <stdlib.h>
+#include <string.h>
 #include "dict.h"
 
 Dict * dict_init()
 {
     Dict *d = malloc(sizeof(Dict));
-    d->first = d->cursor = NULL;
+    d->first = NULL;
+    d->cursor = NULL;
     return d;
 }
 
