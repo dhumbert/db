@@ -2,7 +2,7 @@ CC=clang
 CFLAGS=-I.
 
 outprogname: db.o dict.o server.o
-	$(CC) -o server dict.o db.o server.o
+	$(CC) -o bin/server dict.o db.o server.o
 
 dict.o: dict.c
 	$(CC) -c dict.c
