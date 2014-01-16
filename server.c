@@ -6,6 +6,7 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include "db.h"
+#include "util.h"
 
 void error(char *msg)
 {
@@ -13,13 +14,28 @@ void error(char *msg)
   exit(1);
 }
 
+void handle_connection(int sock)
+{
+    int n;
+    char buffer[256];
+
+    bzero(buffer,256);
+    n = read(sock,buffer,255);
+    if (n < 0) error("ERROR reading from socket");
+
+    const char *cmd = strip_spaces(buffer);
+
+    printf("Here is the message: %s\n", cmd);
+    n = write(sock,"I got your message\n",18);
+    if (n < 0) error("ERROR writing to socket");
+}
+
 void run_server(int portno)
 {
-    /*
-     * code taken from http://www.linuxhowtos.org/C_C++/socket.htm
-     */
-    int sockfd, newsockfd, clilen, n;
-    char buffer[256];
+    signal(SIGCHLD,SIG_IGN);
+
+    int sockfd, newsockfd, clilen, pid;
+    
     struct sockaddr_in serv_addr, cli_addr;
 
     sockfd = socket(AF_INET, SOCK_STREAM, 0);
@@ -31,29 +47,28 @@ void run_server(int portno)
     serv_addr.sin_family = AF_INET;
     serv_addr.sin_addr.s_addr = INADDR_ANY;
     serv_addr.sin_port = htons(portno);
+
     if (bind(sockfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0) {
         error("ERROR on binding");
     }
 
     listen(sockfd,5);
     clilen = sizeof(cli_addr);
-    newsockfd = accept(sockfd, (struct sockaddr *) &cli_addr, &clilen);
-    
-    if (newsockfd < 0) error("ERROR on accept");
 
-    bzero(buffer,256);
-    
-    n = read(newsockfd,buffer,255);
-    
-    if (n < 0) error("ERROR reading from socket");
-    
-    printf("Here is the message: %s\n",buffer);
-    
-    n = write(newsockfd,"I got your message",18);
-    
-    if (n < 0) error("ERROR writing to socket");
-    
-    close(newsockfd);
+    while (1) {
+        newsockfd = accept(sockfd, (struct sockaddr *) &cli_addr, &clilen);
+        if (newsockfd < 0) error("ERROR on accept");
+        pid = fork();
+
+        if (pid < 0) error("ERROR on fork");
+        if (pid == 0) {
+            close(sockfd);
+            handle_connection(newsockfd);
+            exit(0);
+        } else {
+            close(newsockfd);
+        }
+    }
     close(sockfd);
 }
 
@@ -66,21 +81,3 @@ int main(int argc, char *argv[])
     const char *value = db_get(db, "key1");
     printf("%s\n", value);
 }
-
-/*
-p_Dict d = dict_init();
-    dict_add(&d, "key1", "value1");
-    dict_add(&d, "key2", "value2");
-
-    p_DictEntry cursor = dict_iter(&d);
-
-    while (cursor != NULL) {
-        printf("%s\n", cursor->key);
-        cursor = dict_iter(&d);
-    }
-
-    dict_reset(&d);
-
-    const char *value = dict_get(d, "key1");
-    printf("Found value: %s\n", value);
-*/
