@@ -1,35 +1,32 @@
-#include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
-#include <unistd.h>
-#include <sys/types.h> 
+#include <stdio.h>
+#include <string.h> /* memset() */
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <arpa/inet.h>
+#include <unistd.h>
+#include <netdb.h>
+#include <pthread.h>
+#include <sys/mman.h>
 #include "db.h"
 #include "util.h"
 
-static Db *db;
 
-void error(char *msg)
-{
-  perror(msg);
-  exit(1);
-}
+#ifndef  MAP_ANONYMOUS
+#define MAP_ANONYMOUS MAP_ANON
+#endif
+
+static Db *db;
 
 const char * handle_command(char *cmd)
 {
     const char *result_msg;
     to_lower(cmd);
     
-    printf("Received cmd: %s.\n", cmd);
-
     if (strcmp(cmd, "set") == 0) {
         db_set(db, "testkey", "lorem ipsum");
         result_msg = "set called";
-    printf("pset %p\n", db->dict->first);
     } else if (strcmp(cmd, "get") == 0) {
-        printf("IN GET: %s\n", db_get(db, "testkey"));
-    printf("pget %p\n", db->dict->first);
         result_msg = db_get(db, "testkey");
     } else {
         result_msg = "INVALID COMMAND";
@@ -38,73 +35,103 @@ const char * handle_command(char *cmd)
     return result_msg;
 }
 
-void handle_connection(int sock)
+void * handle_connection(void *newsock)
 {
-    int n;
+    int n, sock = (int) newsock;
     char buffer[256];
-
     bzero(buffer,256);
-    n = read(sock,buffer,255);
-    if (n < 0) error("ERROR reading from socket");
+    n = read(sock, buffer, 255);
+
+    if (n < 0) {
+        perror("ERROR reading from socket");
+        pthread_exit(0);
+    }
 
     char *cmd = strip_spaces(buffer);
 
     const char *result_msg = handle_command(cmd);
 
-    printf("RESULT: %s\n", result_msg);
-    //printf("Here is the message: %s\n", cmd);
-    //n = write(sock,"I got your message\n",18);
-    //if (n < 0) error("ERROR writing to socket");
+    n = write(sock, result_msg, strlen(result_msg));
+    if (n < 0) perror("ERROR writing to socket");
+    
+    close(newsock);
+    pthread_exit(0);
 }
 
-void run_server(int portno)
+int run_server(const char *port)
 {
-    signal(SIGCHLD,SIG_IGN);
+    int sock;
+    pthread_t thread;
+    struct addrinfo hints, *res;
+    int reuseaddr = 1; /* True */
 
-    int sockfd, newsockfd, clilen, pid;
-    
-    struct sockaddr_in serv_addr, cli_addr;
-
-    sockfd = socket(AF_INET, SOCK_STREAM, 0);
-    if (sockfd < 0) {
-      error("ERROR opening socket");
+    /* Get the address info */
+    memset(&hints, 0, sizeof hints);
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_STREAM;
+    if (getaddrinfo(NULL, port, &hints, &res) != 0) {
+        perror("getaddrinfo");
+        return 1;
     }
 
-    bzero((char *) &serv_addr, sizeof(serv_addr));
-    serv_addr.sin_family = AF_INET;
-    serv_addr.sin_addr.s_addr = INADDR_ANY;
-    serv_addr.sin_port = htons(portno);
-
-    if (bind(sockfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0) {
-        error("ERROR on binding");
+    /* Create the socket */
+    sock = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
+    if (sock == -1) {
+        perror("socket");
+        return 1;
     }
 
-    listen(sockfd,5);
-    clilen = sizeof(cli_addr);
+    /* Enable the socket to reuse the address */
+    if (setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &reuseaddr, sizeof(int)) == -1) {
+        perror("setsockopt");
+        return 1;
+    }
 
+    /* Bind to the address */
+    if (bind(sock, res->ai_addr, res->ai_addrlen) == -1) {
+        perror("bind");
+        return 0;
+    }
+
+    freeaddrinfo(res);
+
+    /* Listen */
+    if (listen(sock, 10) == -1) {
+        perror("listen");
+        return 0;
+    }
+
+    /* Main loop */
     while (1) {
-        newsockfd = accept(sockfd, (struct sockaddr *) &cli_addr, &clilen);
-        if (newsockfd < 0) error("ERROR on accept");
-        pid = fork();
-
-        if (pid < 0) error("ERROR on fork");
-        if (pid == 0) {
-            close(sockfd);
-            handle_connection(newsockfd);
-            exit(0);
-        } else {
-            close(newsockfd);
+        size_t size = sizeof(struct sockaddr_in);
+        struct sockaddr_in their_addr;
+        int newsock = accept(sock, (struct sockaddr*)&their_addr, &size);
+        if (newsock == -1) {
+            perror("accept");
+        }
+        else {
+            printf("Got a connection from %s on port %d\n", 
+                    inet_ntoa(their_addr.sin_addr), htons(their_addr.sin_port));
+            if (pthread_create(&thread, NULL, &handle_connection, (void *) newsock) != 0) {
+                fprintf(stderr, "Failed to create thread\n");
+            }
         }
     }
-    close(sockfd);
+
+    return 0;
 }
 
 int main(int argc, char *argv[])
 {
-    int port = 4486;
-    db = db_init();
+    const char *port = "4486";
+    db = mmap(NULL, sizeof(Db), PROT_READ | PROT_WRITE, 
+                    MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+    db_init(db);
+    
     run_server(port);
+    // TODO join threads
     //db_set(db, "key1", "value1");
     //const char *value = db_get(db, "key1");
     //printf("%s\n", value);
+    munmap(db, sizeof(Db));
 }

@@ -2,9 +2,8 @@
 #include "dict.h"
 #include "db.h"
 
-Db * db_init()
+Db * db_init(Db *db)
 {
-    Db *db = malloc(sizeof(Db));
     db->dict = dict_init();
 
     return db;
