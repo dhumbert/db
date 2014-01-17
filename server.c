@@ -18,16 +18,40 @@
 
 static Db *db;
 
-const char * handle_command(char *cmd)
+const char * handle_command(char *cmd_string)
 {
     const char *result_msg;
+    char *token, *cmd = "", *key = "", *value = "";
+    int i = 0;
+
+    token = strtok(cmd_string, " ");
+
+    while (token != NULL) {
+        if (i == 0) {
+            cmd = token;
+        } else if (i == 1) {
+            key = token;
+        } else if (i == 2) {
+            value = token;
+        }
+
+        token = strtok(NULL, " ");
+        i++;
+    }
+
     to_lower(cmd);
-    
     if (strcmp(cmd, "set") == 0) {
-        db_set(db, "testkey", "lorem ipsum");
-        result_msg = "set called";
+        if (key == NULL || key == "" || value == NULL || value == "") {
+            result_msg = "SYNTAX: SET <key> <value>";
+        } else {
+            int result = db_set(db, key, value);
+            sprintf(result_msg, "%d", result);
+        }
     } else if (strcmp(cmd, "get") == 0) {
-        result_msg = db_get(db, "testkey");
+        result_msg = db_get(db, key);
+        if (result_msg == NULL) {
+            result_msg = "NULL";
+        }
     } else {
         result_msg = "INVALID COMMAND";
     }
