@@ -41,7 +41,7 @@ const char * handle_command(char *cmd_string)
 
     to_lower(cmd);
     if (strcmp(cmd, "set") == 0) {
-        if (key == NULL || key == "" || value == NULL || value == "") {
+        if (key == NULL || strcmp(key, "") == 0 || value == NULL || strcmp(value, "") == 0) {
             result_msg = "SYNTAX: SET <key> <value>";
         } else {
             int result = db_set(db, key, value);
@@ -151,7 +151,7 @@ int main(int argc, char *argv[])
     db = mmap(NULL, sizeof(Db), PROT_READ | PROT_WRITE, 
                     MAP_SHARED | MAP_ANONYMOUS, -1, 0);
     db_init(db);
-    
+    db_set(db, "lorem", "ipsum");
     run_server(port);
     // TODO join threads
     //db_set(db, "key1", "value1");

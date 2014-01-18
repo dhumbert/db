@@ -1,6 +1,8 @@
 #ifndef DICT_H
 #define DICT_H
 
+#include <pthread.h>
+
 typedef struct DictEntry {
     const char *key;
     const char *value;
@@ -10,6 +12,7 @@ typedef struct DictEntry {
 typedef struct Dict {
     DictEntry *first;
     DictEntry *cursor;
+    pthread_rwlock_t lock;
 } Dict;
 
 Dict * dict_init(void);
